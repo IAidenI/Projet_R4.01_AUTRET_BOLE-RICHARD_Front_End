@@ -1,0 +1,19 @@
+<header>
+    <h1><a href="./Dashboard.html">Tableau de Bord de l'équipe</a></h1>
+    <nav>
+        <ul>
+            <li><a href="./gestion_joueurs.html">Équipe</a></li>
+            <li><a href="./gestion_matchs.html">Matchs</a></li>
+            <li><a href="./Statistiques.html">Statistiques</a></li>
+            <span></span>
+            <li><a href="#" onclick="logout()">Déconnexion</a></li>
+        </ul>
+    </nav>
+</header>
+
+<script>
+    function logout() {
+        sessionStorage.removeItem("token");
+        location.reload();
+    }
+</script>

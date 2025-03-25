@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ajouter/Modifier Joueur</title>
+    <link rel="stylesheet" href="./Styles/style.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script type="module">
+        import { checkToken, API_URLS } from "./configs.js";
+
+        $(document).ready(async function () {
+            const token = checkToken();
+
+            // Charge le header
+            const response = await fetch("./header.html");
+            if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+            $("#header-placeholder").html(await response.text());
+            
+            const urlParams = new URLSearchParams(window.location.search);
+            const joueurId = urlParams.get('id');
+            let isEdit = false;
+
+            if (joueurId) {
+                isEdit = true;
+                loadJoueur(joueurId, token);
+            }
+
+            $("#playerForm").submit(async function (event) {
+                event.preventDefault();
+                await saveJoueur(isEdit, token);
+            });
+        });
+
+        async function loadJoueur(joueurId, token) {
+            try {
+                const response = await fetch(`${API_URLS.GESTION_SPORT}joueur/${joueurId}/`, {
+                    method: "GET",
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+
+                if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+
+                const data = await response.json();
+                let joueur = data.data;
+
+                $("#numeroLicence").val(joueur.numero_licence).prop("readonly", true);
+                $("#nom").val(joueur.nom);
+                $("#prenom").val(joueur.prenom);
+                $("#dateNaissance").val(joueur.date_naissance);
+                $("#taille").val(joueur.taille * 100);
+                $("#poids").val(joueur.poids);
+                $("#statut").val(joueur.statut);
+                $("#submitBtn").text("Modifier");
+            } catch (error) {
+                console.error("Erreur lors du chargement du joueur :", error);
+            }
+        }
+
+        async function saveJoueur(isEdit, token) {
+            const joueur = {
+                numeroLicence: $("#numeroLicence").val(),
+                nom: $("#nom").val(),
+                prenom: $("#prenom").val(),
+                dateNaissance: $("#dateNaissance").val(),
+                taille: $("#taille").val() / 100,
+                poids: $("#poids").val(),
+                statut: $("#statut").val()
+            };
+
+            const url = isEdit ? `${API_URLS.GESTION_SPORT}joueur/${joueur.numeroLicence}/` : `${API_URLS.GESTION_SPORT}joueur/`;
+            const method = isEdit ? "PUT" : "POST";
+
+            try {
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${token}`
+                    },
+                    body: JSON.stringify(joueur)
+                });
+
+                if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+
+                window.location.href = "gestion_joueurs.html?message=" + (isEdit ? "updated" : "added");
+            } catch (error) {
+                console.error("Erreur lors de l'enregistrement :", error);
+                $("#errorMessage").text("Une erreur est survenue.").show();
+            }
+        }
+    </script>
+</head>
+
+<body>
+    <div id="header-placeholder"></div>
+
+    <main>
+        <section class="add-edit-player">
+            <h2 id="formTitle">Ajouter Joueur</h2>
+
+            <div id="errorMessage" class="alert-error" style="display: none;"></div>
+
+            <form id="playerForm">
+                <label for="numeroLicence">Numéro de Licence</label>
+                <input type="text" id="numeroLicence" name="numero_licence" required>
+
+                <label for="nom">Nom</label>
+                <input type="text" id="nom" name="nom" required>
+
+                <label for="prenom">Prénom</label>
+                <input type="text" id="prenom" name="prenom" required>
+
+                <label for="dateNaissance">Date de Naissance</label>
+                <input type="date" id="dateNaissance" name="date_naissance" required>
+
+                <label for="taille">Taille (cm)</label>
+                <input type="number" id="taille" name="taille" required>
+
+                <label for="poids">Poids (kg)</label>
+                <input type="number" id="poids" name="poids" required>
+
+                <label for="statut">Statut</label>
+                <select id="statut" name="statut" required>
+                    <option value="Actif">Actif</option>
+                    <option value="Blessé">Blessé</option>
+                    <option value="Suspendu">Suspendu</option>
+                </select>
+
+                <div class="form-actions">
+                    <button type="submit" id="submitBtn">Ajouter</button>
+                    <a href="gestion_joueurs.html" class="back-button">Annuler</a>
+                </div>
+            </form>
+        </section>
+    </main>
+</body>
+
+</html>

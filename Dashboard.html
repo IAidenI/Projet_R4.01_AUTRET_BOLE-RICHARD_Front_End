@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sport Team Dashboard</title>
+    <link rel="stylesheet" href="./Styles/style.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://kit.fontawesome.com/7a0b90407e.js" crossorigin="anonymous"></script>
+
+    <script type="module">
+        import { checkToken, API_URLS } from "./configs.js";
+
+        $(document).ready(async function () {
+            // Vérification du token
+            const token = checkToken();
+
+            // Charge le header
+            const response = await fetch("./header.html");
+            if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+            $("#header-placeholder").html(await response.text());
+
+            // Fonction pour gérer les requêtes sans bloquer en cas d'erreur
+            function safeAjax(url) {
+                return $.ajax({
+                    url: url,
+                    contentType: "application/json",
+                    method: "GET",
+                    headers: { "Authorization": `Bearer ${token}` }
+                }).catch(() => {
+                    console.warn(`Erreur API ou aucune donnée trouvée pour ${url}`);
+                    return { data: [] };
+                });
+            }
+
+            // Exécuter les requêtes
+            let nextMatchesRequest = safeAjax(`${API_URLS.GESTION_SPORT}rencontre/next/`);
+            let previousMatchesRequest = safeAjax(`${API_URLS.GESTION_SPORT}rencontre/previous/`);
+            let playersRequest = safeAjax(`${API_URLS.GESTION_SPORT}joueur/`);
+
+            // Attendre que toutes les requêtes se terminent
+            Promise.all([nextMatchesRequest, previousMatchesRequest, playersRequest])
+                .then(([nextMatches, previousMatches, players]) => {
+                    renderDashboard(nextMatches.data, previousMatches.data, players.data);
+                    $(".loader_container").fadeOut();
+                })
+                .catch(error => {
+                    console.error("Erreur critique lors du chargement des données", error);
+                    $(".loader_container").fadeOut();
+                });
+        });
+
+        function renderDashboard(nextMatches, previousMatches, players) {
+            let nextMatchesHtml = nextMatches.length > 0
+                ? nextMatches.map(match => `
+                    <tr>
+                        <td><a href="feuille_match.html?id=${match.id}" class="dashboard-clickable">${match.equipe_adverse}</a></td>
+                        <td>${match.date_heure}</td>
+                        <td>${match.lieu}</td>
+                    </tr>
+                `).join('')
+                : `<tr><td colspan="3" style="text-align:center;">Aucun match à venir</td></tr>`;
+
+            let previousMatchesHtml = previousMatches.length > 0
+                ? previousMatches.map(match => `
+                    <tr>
+                        <td><a href="feuille_match.html?id=${match.id}" class="dashboard-clickable">${match.equipe_adverse}</a></td>
+                        <td>${match.date_heure}</td>
+                        <td>${match.lieu}</td>
+                    </tr>
+                `).join('')
+                : `<tr><td colspan="3" style="text-align:center;">Aucun match passé</td></tr>`;
+
+            let playersHtml = players.length > 0
+                ? players.map(player => `
+                    <tr>
+                        <td><a href="statistique_joueur.html?licence=${player.numeroLicence}" class="dashboard-clickable">${player.nom}</a></td>
+                        <td>${player.prenom}</td>
+                        <td>${player.statut}</td>
+                    </tr>
+                `).join('')
+                : `<tr><td colspan="3" style="text-align:center;">Aucun joueur enregistré</td></tr>`;
+
+            let dashboardHtml = `
+                <div class="dashboard-top-panel">
+                    <div class="dashboard-section">
+                        <div class="dashboard-header">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <h2>Matchs</h2>
+                                <a href="AjouterModifierMatch.html" class="add-match-button" style="margin: 0">Ajouter un match</a>
+                            </div>
+                        </div>
+                        <div class="scrollable_div">
+                            <table>
+                                <tbody>
+                                    <tr class="sticky-row"><td colspan="3" style="text-align:center; font-weight:bold;">Matchs à venir</td></tr>
+                                    ${nextMatchesHtml}
+                                    <tr class="sticky-row"><td colspan="3" style="text-align:center; font-weight:bold;">Matchs passés</td></tr>
+                                    ${previousMatchesHtml}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="dashboard-section">
+                        <div class="dashboard-header">
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <h2>Joueurs</h2>
+                                <a href="AjouterModifierJoueur.html" class="add-player-button" style="margin: 0">Ajouter un Joueur</a>
+                            </div>
+                        </div>
+                        <div class="scrollable_div">
+                            <table>
+                                <thead>
+                                    <tr><th>Nom</th><th>Prénom</th><th>Statut</th></tr>
+                                </thead>
+                                <tbody>
+                                    ${playersHtml}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            $(".dashboard-main-panel").html(`
+                <h1>Bienvenue sur le tableau de bord</h1>
+                ${dashboardHtml}
+            `);
+        }
+    </script>
+</head>
+
+<body>
+    <div id="header-placeholder"></div>
+
+    <main class="dashboard-main">
+        <div class="dashboard-main-panel">
+            <div class="loader_container">
+                <i class="fa-solid fa-circle-notch"></i>
+            </div>
+        </div>
+    </main>
+</body>
+
+</html>

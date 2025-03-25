@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion des joueurs</title>
+    <link rel="stylesheet" href="./Styles/style.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script type="module">
+        import { checkToken, API_URLS } from "./configs.js";
+
+        $(document).ready(async function () {
+            const token = checkToken();
+
+            // Charge le header
+            const response = await fetch("./header.html");
+            if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+            $("#header-placeholder").html(await response.text());
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const searchQuery = urlParams.get("search") || "";
+            const message = urlParams.get("message");
+            const error = urlParams.get("error");
+
+            // Remplir le champ de recherche avec la valeur de l'URL
+            $("#searchInput").val(searchQuery);
+
+            displayMessage(message, error);
+            loadJoueurs(searchQuery, token);
+
+            $("#searchForm").submit(function (event) {
+                event.preventDefault();
+                const searchValue = $("#searchInput").val();
+                window.location.href = `gestion_joueurs.html?search=${encodeURIComponent(searchValue)}`;
+            });
+        });
+
+        function calculerAge(dateNaissance) {
+            const naissance = new Date(dateNaissance);
+            const aujourdHui = new Date();
+            let age = aujourdHui.getFullYear() - naissance.getFullYear();
+            const mois = aujourdHui.getMonth() - naissance.getMonth();
+            const jour = aujourdHui.getDate() - naissance.getDate();
+
+            // Ajuste l'âge si l'anniversaire n'est pas encore passé cette année
+            if (mois < 0 || (mois === 0 && jour < 0)) {
+                age--;
+            }
+
+            return age;
+        }
+
+        function displayMessage(message, error) {
+            const messages = {
+                success: "Le joueur a été supprimé avec succès",
+                added: "Le joueur a été ajouté avec succès",
+                updated: "Le joueur a été modifié avec succès",
+            };
+            const errors = {
+                notfound: "Le joueur demandé n'a pas été trouvé",
+                noid: "Aucun ID de joueur n'a été fourni",
+                dependances: "Le joueur ne peut pas être supprimé car il est associé à des participations",
+            };
+
+            if (message && messages[message]) {
+                $("#messageContainer").html(`<div class="alert-success">${messages[message]}</div>`);
+            } else if (error && errors[error]) {
+                $("#messageContainer").html(`<div class="alert-error">${errors[error]}</div>`);
+            }
+        }
+
+        async function loadJoueurs(searchQuery, token) {
+            try {
+                const response = await fetch(`${API_URLS.GESTION_SPORT}joueur/`, {
+                    method: "GET",
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+
+                if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+
+                const data = await response.json();
+
+                let joueurs = data.data;
+
+                // Vérifie si la réponse contient bien un tableau
+                if (!Array.isArray(joueurs)) {
+                    throw new Error("Format inattendu des données reçues");
+                }
+
+
+                // Filtrage si une recherche est demandée
+                if (searchQuery) {
+                    joueurs = joueurs.filter(joueur => 
+                        joueur.nom.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        joueur.prenom.toLowerCase().includes(searchQuery.toLowerCase())
+                    );
+                }
+
+                renderJoueurs(joueurs);
+            } catch (error) {
+                console.error("Erreur lors du chargement des joueurs :", error);
+                $("#playerList").html("<p>Impossible de charger les joueurs.</p>");
+            }
+        }
+
+        function renderJoueurs(joueurs) {
+            if (joueurs.length === 0) {
+                $("#playerList").html("<p>Aucun joueur trouvé.</p>");
+                return;
+            }
+
+            const joueursHtml = joueurs.map(joueur => {
+                const age = calculerAge(joueur.date_naissance);
+                return `
+                    <div class="player-card-container">
+                        <a href="statistique_joueur.html?licence=${joueur.numero_licence}" class="player-card">
+                            <div class="player-avatar"></div>
+                            <div class="player-info">
+                                <h2>${joueur.nom} ${joueur.prenom}</h2>
+                                <p>Statut: ${joueur.statut}</p>
+                                <p>Âge: ${age} ans</p>
+                            </div>
+                        </a>
+                        <div class="player-card-actions">
+                            <a href="AjouterModifierJoueur.html?id=${joueur.numero_licence}" class="edit-player-button">
+                                <img src="./img/settings.png" alt="Modifier">
+                            </a>
+                            <a href="SupprimerJoueur.html?id=${joueur.numero_licence}" class="delete-player-button">
+                                <img src="./img/delete.png" alt="delete icon">
+                            </a>
+                        </div>
+                    </div>
+                `;
+            }).join("");
+
+            $("#playerList").html(joueursHtml);
+        }
+    </script>
+</head>
+
+<body>
+    <div id="header-placeholder"></div>
+
+    <main>
+        <section class="player-management">
+            <h2>Gestion de l'équipe de Basketball</h2>
+
+            <div id="messageContainer"></div>
+
+            <form id="searchForm" class="player-search">
+                <input type="text" id="searchInput" name="search" placeholder="Rechercher un joueur par nom">
+                <button type="submit">🔍</button>
+            </form>
+
+            <div style="margin-bottom: 20px;">
+                <a class="add-player-button" href="AjouterModifierJoueur.html">Ajouter un Joueur</a>
+            </div>
+
+            <div id="playerList" class="player-list">
+                <p>Chargement des joueurs...</p>
+            </div>
+        </section>
+    </main>
+</body>
+
+</html>

@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Feuille de Match</title>
+  <link rel="stylesheet" href="./Styles/style.css">
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://kit.fontawesome.com/7a0b90407e.js" crossorigin="anonymous"></script>
+  <script type="module">
+    import { checkToken, API_URLS } from "./configs.js";
+
+    // Variables globales pour éviter de multiples appels API
+    let playersAll = [];
+    let participations = [];
+    let matchId = null;
+
+    $(document).ready(async function () {
+        const token = checkToken();
+
+        // Charger le header
+        const headerResp = await fetch("./header.html");
+        if (!headerResp.ok) throw new Error(`Erreur HTTP : ${headerResp.status}`);
+        $("#header-placeholder").html(await headerResp.text());
+
+        // Récupérer l'id du match depuis l'URL
+        const urlParams = new URLSearchParams(window.location.search);
+        matchId = urlParams.get("id");
+        if (!matchId) {
+        alert("L'identifiant du match est requis.");
+        window.location.href = "gestion_matchs.html";
+        return;
+        }
+        $("#matchIdDisplay").text(matchId);
+
+        // Charger tous les joueurs
+        playersAll = await loadAllPlayers(token);
+        
+        // Charger les détails du match et les participations
+        await loadMatchDetails(matchId, token);
+        await loadParticipations(matchId, token);
+
+        // Charger la liste des joueurs disponibles dans le formulaire d'ajout
+        renderAvailablePlayers();
+
+        // Gestion de l'ajout d'un joueur au match
+        $("#addPlayerForm").submit(async function (event) {
+        event.preventDefault();
+        const selectedLicense = $("#playerSelect").val();
+        const selectedRole = $("#roleSelect").val();
+        if (!selectedLicense || !selectedRole) {
+            alert("Veuillez choisir un joueur et un poste.");
+            return;
+        }
+        await addParticipation(matchId, selectedLicense, selectedRole, token);
+        });
+
+        // Gestion de la mise à jour du résultat du match
+        $("input[name='result']").change(async function () {
+        const newResult = $(this).val();
+        const token = checkToken();
+        
+        // Récupérer les infos du match avant d'envoyer la mise à jour
+        const matchDetails = await loadMatchDetails(matchId, token);
+        if (!matchDetails) {
+            alert("Impossible de récupérer les détails du match.");
+            return;
+        }
+
+        // Appel de updateMatchResult avec les bonnes données
+        await updateMatchResult(matchId, matchDetails.dateHeure, matchDetails.equipeAdverse, matchDetails.lieu, newResult, token);
+        });
+    });
+
+    // Charge tous les joueurs
+    async function loadAllPlayers(token) {
+      try {
+        const resp = await fetch(`${API_URLS.GESTION_SPORT}joueur/`, {
+          method: "GET",
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (!resp.ok) throw new Error(`Erreur HTTP : ${resp.status}`);
+        const data = await resp.json();
+        return Array.isArray(data.data) ? data.data : [];
+      } catch (error) {
+        console.error("Erreur lors du chargement des joueurs :", error);
+        return [];
+      }
+    }
+
+    // Charge les détails du match
+    async function loadMatchDetails(matchId, token) {
+    try {
+        const resp = await fetch(`${API_URLS.GESTION_SPORT}rencontre/${matchId}`, {
+            method: "GET",
+            headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (!resp.ok) throw new Error(`Erreur HTTP : ${resp.status}`);
+        const data = await resp.json();
+        const match = data.data;
+
+        // Mise à jour de l'UI avec les données du match
+        $("input[name='result'][value='" + (match.resultat || "") + "']").prop("checked", true);
+
+        // Stocker les infos du match pour mise à jour
+        return {
+            dateHeure: match.date_heure,
+            equipeAdverse: match.equipe_adverse,
+            lieu: match.lieu
+        };
+    } catch (error) {
+        console.error("Erreur lors du chargement des détails du match :", error);
+        return null;
+    }
+    }
+
+    // Charge les participations pour le match
+    async function loadParticipations(matchId, token) {
+      try {
+        const resp = await fetch(`${API_URLS.GESTION_SPORT}participation/match/${matchId}`, {
+          method: "GET",
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (!resp.ok) throw new Error(`Erreur HTTP : ${resp.status}`);
+        const data = await resp.json();
+        participations = Array.isArray(data.data) ? data.data : [];
+        renderParticipations(token);
+        // Mise à jour de la liste des joueurs disponibles
+        renderAvailablePlayers();
+      } catch (error) {
+        console.error("Erreur lors du chargement des participations :", error);
+        $("#participationsList").html("<p>Impossible de charger la feuille de match.</p>");
+      }
+    }
+
+    // Affiche les participations dans le tableau
+    function renderParticipations(token) {
+      if (participations.length === 0) {
+        $("#participationsList").html("<p>Aucune participation enregistrée.</p>");
+        return;
+      }
+      let html = "";
+      // Pour chaque participation, nous recherchons les infos du joueur via playersAll
+      participations.forEach(p => {
+        // On suppose que dans l'objet p, la propriété id_rencontre et numero_licence sont disponibles
+        const player = playersAll.find(j => j.numero_licence === p.numero_licence);
+        const playerName = player ? (player.nom + " " + player.prenom) : "Inconnu";
+        // Affichage de la note avec un système de radio boutons pour 1 à 5
+        html += `
+          <tr>
+            <td>${playerName}</td>
+            <td>${p.role || "Non spécifié"}</td>
+            <td>
+              <form class="ratingForm" data-license="${p.numero_licence}">
+                <div class="rating">
+                  ${[5,4,3,2,1].map(star => `
+                    <input type="radio" name="rating-${p.numero_licence}" value="${star}" id="star${star}-${p.numero_licence}"
+                      ${p.note == star ? "checked" : ""} onchange="updateRating('${p.numero_licence}', ${star})">
+                    <label for="star${star}-${p.numero_licence}"></label>
+                  `).join('')}
+                </div>
+              </form>
+            </td>
+            <td>
+                <a href="#" class="delete-comment-button" data-id="${p.numero_licence}">
+                    <img src="./img/delete.png" alt="supprimer commentaire"/>
+                </a>
+            </td>
+          </tr>
+        `;
+      });
+      $("#participationsList").html(html);
+    }
+
+    // Affiche la liste des joueurs disponibles pour ajouter (ceux qui ne sont pas déjà inscrits)
+    function renderAvailablePlayers() {
+      // Créer la liste des licences déjà présentes dans les participations
+      const inscrits = participations.map(p => p.numero_licence);
+      const available = playersAll.filter(j => !inscrits.includes(j.numero_licence));
+      let options = `<option value="">-- Choisir un joueur --</option>`;
+      available.forEach(j => {
+        options += `<option value="${j.numero_licence}">${j.nom} ${j.prenom}</option>`;
+      });
+      $("#playerSelect").html(options);
+    }
+
+    // Ajoute une participation via POST
+    async function addParticipation(matchId, numero_licence, role, token) {
+      try {
+        const payload = {
+          id_rencontre: matchId,
+          numero_licence: numero_licence,
+          role: role,
+          note: null
+        };
+
+        const resp = await fetch(`${API_URLS.GESTION_SPORT}participation/`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${token}`
+          },
+          body: JSON.stringify(payload)
+        });
+        if (!resp.ok) throw new Error(`Erreur HTTP : ${resp.status}`);
+        // Recharger la liste des participations et mettre à jour les options
+        await loadParticipations(matchId, token);
+      } catch (error) {
+        console.error("Erreur lors de l'ajout de la participation :", error);
+        alert("Impossible d'ajouter le joueur au match.");
+      }
+    }
+
+    // Met à jour la note d'un joueur dans une participation via PUT
+    async function updateRating(numero_licence, newRating) {
+        const token = checkToken();
+        try {
+            const payload = { note: newRating };
+
+            // Mise à jour immédiate de l'affichage avant la requête
+            $(`input[name='rating-${numero_licence}'][value='${newRating}']`).prop("checked", true);
+
+            const resp = await fetch(`${API_URLS.GESTION_SPORT}participation/${matchId}/${numero_licence}`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!resp.ok) throw new Error(`Erreur HTTP : ${resp.status}`);
+
+            // Met à jour l'affichage après la confirmation du serveur
+            setTimeout(async () => {
+                await loadParticipations(matchId, token);
+            }, 500);
+
+        } catch (error) {
+            console.error("Erreur lors de la mise à jour de la note :", error);
+            alert("Impossible de mettre à jour la note.");
+        }
+    }
+
+    // Rendre la fonction accessible globalement
+    window.updateRating = updateRating;
+
+    // Met à jour le résultat du match via PUT
+    async function updateMatchResult(matchId, dateHeure, equipeAdverse, lieu, newResult, token) {
+        try {
+            const payload = {
+                date_heure: dateHeure,
+                equipe_adverse: equipeAdverse,
+                lieu: lieu,
+                resultat: newResult
+            };
+
+            $("input[name='result'][value='" + newResult + "']").prop("checked", true);
+
+            const resp = await fetch(`${API_URLS.GESTION_SPORT}rencontre/${matchId}`, {
+                method: "PUT",
+                headers: {
+                    "Content-Type": "application/json",
+                    "Authorization": `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!resp.ok) throw new Error(`Erreur HTTP : ${resp.status}`);
+            
+            setTimeout(async () => {
+                const updatedMatch = await loadMatchDetails(matchId, token);
+                if (updatedMatch) {
+                    $("input[name='result'][value='" + updatedMatch.resultat + "']").prop("checked", true);
+                }
+            }, 500);
+
+        } catch (error) {
+            console.error("Erreur lors de la mise à jour du match :", error);
+            alert("Impossible de mettre à jour le match.");
+        }
+    }
+
+    $(document).on("click", ".delete-comment-button", async function (e) {
+        e.preventDefault();
+
+        if (!confirm("Êtes-vous sûr de vouloir supprimer ce joueur de la feuille de match ?")) return;
+
+        const numero_licence = $(this).data("id"); // Récupération du numéro de licence
+        const token = checkToken();
+        
+        try {
+            const resp = await fetch(`${API_URLS.GESTION_SPORT}participation/${matchId}/${numero_licence}`, {
+                method: "DELETE",
+                headers: { "Authorization": `Bearer ${token}` }
+            });
+            if (!resp.ok) throw new Error(`Erreur HTTP : ${resp.status}`);
+
+            // Recharger les participations et mettre à jour la liste des joueurs disponibles
+            await loadParticipations(matchId, token);
+        } catch (error) {
+            console.error("Erreur lors de la suppression de la participation :", error);
+            alert("Impossible de supprimer ce joueur.");
+        }
+    });
+  </script>
+</head>
+<body>
+  <div id="header-placeholder"></div>
+  <main>
+    <h1>Feuille de Match - Match #<span id="matchIdDisplay"></span></h1>
+    <section class="feuille-match-top-container">
+      <form id="addPlayerForm" class="add-player-form">
+        <div class="add-player-form-select">
+          <label for="playerSelect">Joueur :</label>
+          <select id="playerSelect" name="playerSelect">
+          </select>
+        </div>
+        <div class="add-player-form-select">
+          <label for="roleSelect">Poste :</label>
+          <select id="roleSelect" name="roleSelect">
+            <option value="">-- Choisir un poste --</option>
+            <option value="Meneur">Meneur</option>
+            <option value="Arrière">Arrière</option>
+            <option value="Aillier">Aillier</option>
+            <option value="Aillier Fort">Aillier Fort</option>
+            <option value="Pivot">Pivot</option>
+          </select>
+        </div>
+        <button type="submit" name="addPlayer">Ajouter</button>
+      </form>
+
+      <form id="updateResultForm">
+        <label for="result">Résultat du match :</label>
+        <div class="radio-inputs">
+          <label class="radio">
+            <input type="radio" name="result" value="Victoire">
+            <span class="name">Victoire</span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="result" value="Égalité">
+            <span class="name">Égalité</span>
+          </label>
+          <label class="radio">
+            <input type="radio" name="result" value="Défaite">
+            <span class="name">Défaite</span>
+          </label>
+        </div>
+      </form>
+    </section>
+
+    <section class="feuille-match-selection-container">
+      <table class="selected-player-list">
+        <thead>
+          <tr>
+            <th>Joueur</th>
+            <th>Poste</th>
+            <th>Note</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="participationsList">
+        </tbody>
+      </table>
+    </section>
+    <a href="gestion_matchs.html">Retour à la gestion des matchs</a>
+  </main>
+</body>
+</html>

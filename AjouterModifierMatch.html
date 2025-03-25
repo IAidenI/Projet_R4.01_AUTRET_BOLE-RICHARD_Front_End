@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ajouter ou Modifier un Match</title>
+    <link rel="stylesheet" href="./Styles/style.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script type="module">
+        import { checkToken, API_URLS } from "./configs.js";
+
+        $(document).ready(async function () {
+            const token = checkToken();
+
+            // Charger le header
+            const response = await fetch("./header.html");
+            if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+            $("#header-placeholder").html(await response.text());
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const matchId = urlParams.get("id");
+
+            if (matchId) {
+                await loadMatchData(matchId, token);
+            }
+
+            $("#matchForm").submit(async function (event) {
+                event.preventDefault();
+                await submitMatchForm(matchId, token);
+            });
+        });
+
+        async function loadMatchData(matchId, token) {
+            try {
+                const response = await fetch(`${API_URLS.GESTION_SPORT}rencontre/${matchId}`, {
+                    method: "GET",
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+
+                if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+
+                const data = await response.json();
+                const match = data.data;
+
+                if (!match) throw new Error("Match introuvable.");
+
+                $("#equipeAdverse").val(match.equipe_adverse);
+                $("#dateHeure").val(formatDateForInput(match.date_heure));
+                $("#lieu").val(match.lieu);
+                $("#resultat").val(match.resultat || "En attente"); // Préserve le résultat existant
+                $("#formTitle").text("Modifier un Match");
+                $("#submitButton").text("Modifier le match");
+            } catch (error) {
+                console.error("Erreur lors du chargement du match :", error);
+                alert("Impossible de charger les informations du match.");
+                window.location.href = "gestion_matchs.html";
+            }
+        }
+
+        async function submitMatchForm(matchId, token) {
+            const equipeAdverse = $("#equipeAdverse").val();
+            const dateHeure = $("#dateHeure").val();
+            const lieu = $("#lieu").val();
+            const resultat = $("#resultat").val() || "En attente"; // Si pas défini, mettre "En attente"
+
+            const matchData = {
+                equipe_adverse: equipeAdverse,
+                date_heure: dateHeure,
+                lieu: lieu,
+                resultat: resultat
+            };
+
+            try {
+                let response;
+                if (matchId) {
+                    // Modification d'un match
+                    response = await fetch(`${API_URLS.GESTION_SPORT}rencontre/${matchId}`, {
+                        method: "PUT",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${token}`
+                        },
+                        body: JSON.stringify(matchData)
+                    });
+                } else {
+                    // Création d'un match avec résultat par défaut
+                    response = await fetch(`${API_URLS.GESTION_SPORT}rencontre/`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                            "Authorization": `Bearer ${token}`
+                        },
+                        body: JSON.stringify(matchData)
+                    });
+                }
+
+                if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+
+                window.location.href = "gestion_matchs.html";
+            } catch (error) {
+                console.error("Erreur lors de l'enregistrement du match :", error);
+                alert("Impossible d'enregistrer le match.");
+            }
+        }
+
+        function formatDateForInput(dateString) {
+            const date = new Date(dateString);
+            return date.toISOString().slice(0, 16); // Format YYYY-MM-DDTHH:MM
+        }
+    </script>
+</head>
+
+<body>
+    <div id="header-placeholder"></div>
+
+    <main>
+        <section class="add-match-form" id="addMatchForm">
+            <h2 id="formTitle">Ajouter un Match</h2>
+            <form id="matchForm">
+                <label for="equipeAdverse">Équipe adverse :</label>
+                <input type="text" id="equipeAdverse" name="equipeAdverse" required>
+
+                <label for="dateHeure">Date et heure :</label>
+                <input type="datetime-local" id="dateHeure" name="dateHeure" required>
+
+                <label for="lieu">Lieu :</label>
+                <select id="lieu" name="lieu" required>
+                    <option value="Domicile">Domicile</option>
+                    <option value="Extérieur">Extérieur</option>
+                </select>
+
+                <label for="resultat">Résultat :</label>
+                <select id="resultat" name="resultat" required>
+                    <option value="En attente">En attente</option>
+                    <option value="Victoire">Victoire</option>
+                    <option value="Défaite">Défaite</option>
+                    <option value="Égalité">Égalité</option>
+                </select>
+
+                <div class="form-actions">
+                    <button type="submit" id="submitButton">Ajouter le match</button>
+                    <a href="gestion_matchs.html" class="back-button">Annuler</a>
+                </div>
+            </form>
+        </section>
+    </main>
+</body>
+
+</html>

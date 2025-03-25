@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestion des matchs</title>
+    <link rel="stylesheet" href="./Styles/style.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script type="module">
+        import { checkToken, API_URLS } from "./configs.js";
+
+        $(document).ready(async function () {
+            const token = checkToken();
+            
+            // Charger le header
+            const response = await fetch("./header.html");
+            if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+            $("#header-placeholder").html(await response.text());
+
+            // Récupération du paramètre de recherche dans l'URL
+            const urlParams = new URLSearchParams(window.location.search);
+            const searchQuery = urlParams.get("search") || "";
+
+            // Remplir la barre de recherche avec la valeur actuelle
+            $("#searchInput").val(searchQuery);
+
+            // Charger les matchs
+            await loadMatches(searchQuery, token);
+
+            // Gestion du formulaire de recherche
+            $("#searchForm").submit(function (event) {
+                event.preventDefault();
+                const searchValue = $("#searchInput").val();
+                window.location.href = `gestion_matchs.html?search=${encodeURIComponent(searchValue)}`;
+            });
+
+            // Gestion de la suppression via event delegation (car les éléments sont dynamiquement ajoutés)
+            $("#matchesList").on("click", ".delete-match-button", function () {
+                const matchId = $(this).data("id");
+                deleteMatch(matchId, token);
+            });
+        });
+
+        async function loadMatches(searchQuery, token) {
+            try {
+                const response = await fetch(`${API_URLS.GESTION_SPORT}rencontre/`, {
+                    method: "GET",
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+
+                if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+
+                const data = await response.json();
+                let matches = data.data;
+
+                // Vérifier si l'API retourne bien un tableau
+                if (!Array.isArray(matches)) {
+                    throw new Error("Format inattendu des données de matchs.");
+                }
+
+                // Filtrage si une recherche est demandée
+                if (searchQuery) {
+                    matches = matches.filter(match =>
+                        match.equipe_adverse.toLowerCase().includes(searchQuery.toLowerCase())
+                    );
+                }
+
+                renderMatches(matches);
+            } catch (error) {
+                console.error("Erreur lors du chargement des matchs :", error);
+                $("#matchesList").html("<p>Impossible de charger les matchs.</p>");
+            }
+        }
+
+        function renderMatches(matches) {
+            if (matches.length === 0) {
+                $("#matchesList").html("<p>Aucun match trouvé.</p>");
+                return;
+            }
+
+            const matchesHtml = matches.map(match => `
+                <div class="match-card-container">
+                    <a href="feuille_match.html?id=${match.id_rencontre}" class="match-card">
+                        <h2>${match.equipe_adverse}</h2>
+                        <p>Date et heure : ${match.date_heure}</p>
+                        <p>Lieu : ${match.lieu}</p>
+                        <p>Résultat : ${match.resultat || "Non défini"}</p>
+                    </a>
+                    <div class="match-card-actions">
+                        <a href="AjouterModifierMatch.html?id=${match.id_rencontre}" class="edit-match-button">
+                            <img src="./img/settings.png" alt="Modifier">
+                        </a>
+                        <button class="delete-match-button" data-id="${match.id_rencontre}">
+                            <img src="./img/delete.png" alt="Supprimer">
+                        </button>
+                    </div>
+                </div>
+            `).join("");
+
+            $("#matchesList").html(matchesHtml);
+        }
+
+        async function deleteMatch(matchId, token) {
+            if (!confirm("Êtes-vous sûr de vouloir supprimer ce match ?")) return;
+
+            try {
+                const response = await fetch(`${API_URLS.GESTION_SPORT}rencontre/${matchId}`, {
+                    method: "DELETE",
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+
+                if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+
+                window.location.href = "gestion_matchs.html?message=success";
+            } catch (error) {
+                console.error("Erreur lors de la suppression :", error);
+                alert("Impossible de supprimer le match.");
+            }
+        }
+
+        // Rendre deleteMatch accessible globalement si nécessaire
+        window.deleteMatch = deleteMatch;
+    </script>
+</head>
+
+<body>
+    <div id="header-placeholder"></div>
+
+    <main>
+        <section class="match-management">
+            <h2>Gestion des matchs</h2>
+
+            <form id="searchForm" class="match-search">
+                <input type="text" id="searchInput" name="search" placeholder="Rechercher une équipe par nom">
+                <button type="submit">🔍</button>
+            </form>
+
+            <div style="margin-bottom: 20px;">
+                <a class="add-match-button" href="AjouterModifierMatch.html">Ajouter un Match</a>
+            </div>
+
+            <div id="matchesList" class="matches-list">
+                <p>Chargement des matchs...</p>
+            </div>
+        </section>
+    </main>
+</body>
+
+</html>

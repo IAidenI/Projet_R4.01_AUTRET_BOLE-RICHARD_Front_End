@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ajouter/Modifier un Commentaire</title>
+    <link rel="stylesheet" href="./Styles/style.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script type="module">
+        import { checkToken, API_URLS } from "./configs.js";
+
+        $(document).ready(async function () {
+            const token = checkToken();
+            const urlParams = new URLSearchParams(window.location.search);
+            const commentaireId = urlParams.get("id");
+            const numeroLicence = urlParams.get("licence");
+
+            if (!numeroLicence && !commentaireId) {
+                window.location.href = "gestion_joueurs.html?error=noid";
+                return;
+            }
+
+            if (commentaireId) {
+                await loadCommentaire(commentaireId, token);
+            } else {
+                $("#numeroLicence").val(numeroLicence);
+            }
+
+            $("#commentForm").submit(async function (event) {
+                event.preventDefault();
+                await saveCommentaire(token);
+            });
+        });
+
+        async function loadCommentaire(commentaireId, token) {
+            try {
+                const response = await fetch(`${API_URLS.GESTION_SPORT}commentaire/${commentaireId}`, {
+                    method: "GET",
+                    headers: { "Authorization": `Bearer ${token}` }
+                });
+
+                if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+
+                const data = await response.json();
+                const commentaire = data.data;
+
+                $("#contenu").val(commentaire.commentaire);
+                $("#numeroLicence").val(commentaire.numero_licence);
+                $("#commentaireId").val(commentaire.id_commentaire);
+                $("#submitBtn").text("Modifier");
+                $("h2").text("Modifier un Commentaire");
+
+            } catch (error) {
+                console.error("Erreur lors du chargement du commentaire :", error);
+                window.location.href = "gestion_joueurs.html?error=notfound";
+            }
+        }
+
+        async function saveCommentaire(token) {
+            const commentaireId = $("#commentaireId").val();
+            const commentaire = {
+                commentaire: $("#contenu").val(),
+                numero_licence: $("#numeroLicence").val(),
+                ...(commentaireId ? {} : { date_commentaire: new Date().toISOString() })
+            };
+
+            const url = commentaireId
+                ? `${API_URLS.GESTION_SPORT}commentaire/${commentaireId}`
+                : `${API_URLS.GESTION_SPORT}commentaire/`;
+            const method = commentaireId ? "PUT" : "POST";
+
+            try {
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${token}`
+                    },
+                    body: JSON.stringify(commentaire)
+                });
+
+                if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+
+                window.location.href = `statistique_joueur.html?licence=${commentaire.numero_licence}`;
+            } catch (error) {
+                console.error("Erreur lors de l'enregistrement :", error);
+                alert("Impossible d'enregistrer le commentaire.");
+            }
+        }
+    </script>
+</head>
+
+<body>
+    <main>
+        <section class="add-comment-form">
+            <h2>Ajouter un Commentaire</h2>
+            <form id="commentForm">
+                <input type="hidden" id="commentaireId">
+                <input type="hidden" id="numeroLicence">
+                <textarea id="contenu" cols="30" rows="3" placeholder="Écrivez votre commentaire ici" required></textarea>
+                <button type="submit" id="submitBtn">Ajouter</button>
+            </form>
+        </section>
+    </main>
+</body>
+
+</html>

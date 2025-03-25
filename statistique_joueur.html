@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Statistiques du joueur</title>
+    <link rel="stylesheet" href="./Styles/style.css"/>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script type="module">
+        import { checkToken, API_URLS } from "./configs.js";
+
+        $(document).ready(async function () {
+            const token = checkToken();
+
+            // Charge le header
+            const response = await fetch("./header.html");
+            if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+            $("#header-placeholder").html(await response.text());
+
+            const urlParams = new URLSearchParams(window.location.search);
+            const numeroLicence = urlParams.get("licence");
+
+            if (!numeroLicence) {
+                window.location.href = "gestion_joueurs.html?error=noid";
+                return;
+            }
+
+            await loadJoueurStats(numeroLicence, token);
+        });
+
+        async function loadJoueurStats(numeroLicence, token) {
+            try {
+                // Récupération du joueur
+                const joueurResponse = await fetch(`${API_URLS.GESTION_SPORT}joueur/${numeroLicence}/`, {
+                    method: "GET",
+                    headers: { "Authorization": `Bearer ${token}` },
+                });
+                if (!joueurResponse.ok) throw new Error(`Erreur HTTP : ${joueurResponse.status}`);
+
+                const data = await joueurResponse.json();
+                let joueur = data.data;
+
+                document.title = `Statistiques du joueur (${joueur.nom} ${joueur.prenom})`;
+                $("#pageTitle").text(`Statistiques du joueur ${joueur.nom} ${joueur.prenom}`);
+
+                // Récupération des participations
+                const participationsResponse = await fetch(
+                    `${API_URLS.GESTION_SPORT}participation/joueur/${numeroLicence}`,
+                    {
+                        method: "GET",
+                        headers: { "Authorization": `Bearer ${token}` },
+                    }
+                );
+
+                let participations = [];
+                if (participationsResponse.ok) {
+                    const participationsData = await participationsResponse.json();
+                    participations = Array.isArray(participationsData.data)
+                        ? participationsData.data
+                        : [];
+                }
+
+                // Récupération des commentaires
+                const commentairesResponse = await fetch(
+                    `${API_URLS.GESTION_SPORT}commentaire/player/${numeroLicence}`,
+                    {
+                        method: "GET",
+                        headers: { "Authorization": `Bearer ${token}` },
+                    }
+                );
+
+                let commentaires = [];
+                if (commentairesResponse.ok) {
+                    const commentairesData = await commentairesResponse.json();
+                    commentaires = Array.isArray(commentairesData.data)
+                        ? commentairesData.data
+                        : [];
+                }
+
+                renderJoueurStats(joueur, participations, commentaires, token);
+            } catch (error) {
+                console.error("Erreur lors du chargement des données :", error);
+                window.location.href = "gestion_joueurs.html?error=notfound";
+            }
+        }
+
+        async function fetchMatchDetails(idRencontre, token) {
+            try {
+                const matchResponse = await fetch(
+                    `${API_URLS.GESTION_SPORT}rencontre/${idRencontre}`,
+                    {
+                        method: "GET",
+                        headers: { "Authorization": `Bearer ${token}` },
+                    }
+                );
+
+                if (!matchResponse.ok) {
+                    console.warn(`Erreur HTTP ${matchResponse.status} pour le match ID ${idRencontre}`);
+                    return null;
+                }
+
+                const matchData = await matchResponse.json();
+
+                if (!matchData || !matchData.data) {
+                    console.warn(`Données invalides reçues pour le match ID ${idRencontre}`);
+                    return null;
+                }
+
+                return matchData;
+            } catch (error) {
+                console.error(`Erreur lors du chargement de la rencontre ${idRencontre} :`, error);
+                return null;
+            }
+        }
+
+        async function renderJoueurStats(joueur, participations, commentaires, token) {
+            const age = calculerAge(joueur.date_naissance);
+
+            // Partie haute : infos du joueur + stats globales
+            $("#playerStatsContainer").html(`
+                <div class="top-panel">
+                    <div class="player-info">
+                        <p><strong>Numéro de licence :</strong> ${joueur.numero_licence || 'Non renseigné'}</p>
+                        <p><strong>Date de naissance :</strong> ${joueur.date_naissance || 'Non renseignée'} (${age} ans)</p>
+                        <p><strong>Taille :</strong> ${(joueur.taille || 0) * 100} cm</p>
+                        <p><strong>Poids :</strong> ${joueur.poids || '0'} kg</p>
+                        <p><strong>Statut :</strong> ${joueur.statut || 'Non défini'}</p>
+                    </div>
+                    <div class="global-stats">
+                        <h3>Statistiques globales</h3>
+                        <ul id="globalStats"></ul>
+                    </div>
+                </div>
+            `);
+
+            // Calcul des stats globales
+            const statsResponse = await fetch(`${API_URLS.GESTION_SPORT}joueur/stats/${joueur.numero_licence}`, {
+                method: "GET",
+                headers: { "Authorization": `Bearer ${token}` },
+            });
+
+            let stats = {};
+            if (statsResponse.ok) {
+                const statsData = await statsResponse.json();
+                stats = statsData.data || {};
+            }
+
+            let participationsHtml = "";
+
+            for (const p of participations) {
+                const match = await fetchMatchDetails(p.id_rencontre, token);
+                if (!match || !match.data) {
+                    console.warn(`Données du match non trouvées pour l'ID ${p.id_rencontre}`);
+                    continue;
+                }
+
+                participationsHtml += `
+                    <tr>
+                        <td>${match.data.date_heure || 'Non définie'}</td>
+                        <td>${match.data.equipe_adverse || 'Inconnue'}</td>
+                        <td>${p.role || 'Non spécifié'}</td>
+                        <td>${p.note ?? '0'}</td>
+                        <td>${match.data.resultat || 'Non défini'}</td>
+                    </tr>
+                `;
+
+                // Mise à jour des stats (victoires, défaites, etc.)
+                const r = match.data.resultat;
+                if (r === "Victoire") stats.wins++;
+                if (r === "Défaite") stats.losses++;
+                if (r === "Égalité") stats.draws++;
+                stats.totalNotes += p.note ?? 0;
+            }
+
+            // Stats
+            $("#globalStats").html(`
+                <li><strong>Total de matchs :</strong> ${stats.total_match || 0}</li>
+                <li><strong>Victoires :</strong> ${stats.victoire || 0} (${stats.win_rate || 0}%)</li>
+                <li><strong>Défaites :</strong> ${stats.defaite || 0}</li>
+                <li><strong>Nuls :</strong> ${stats.nulle || 0}</li>
+                <li><strong>Moyenne des évaluations :</strong> ${stats.note_moyenne || 0}</li>
+                <li><strong>Meilleur poste :</strong> ${stats.meilleur_poste || 'Non défini'}</li>
+            `);
+
+            // Participations
+            $("#participations").html(
+                participationsHtml || "<p>Aucune participation trouvée.</p>"
+            );
+
+            const commentsHtml = commentaires.length > 0
+                ? commentaires.map(c => 
+                    `<li class="comment-item">
+                        <div class="comment-content">
+                            <p class="comment">${c.commentaire}</p>
+                            <p>${c.date_commentaire}</p>
+                        </div>
+                        <div class="comment-actions">
+                            <a href="AjouterModifierCommentaire.html?id=${c.id_commentaire}" class="edit-comment-button">
+                                <img src="./img/settings.png" alt="modifier commentaire"/>
+                            </a>
+                            <a href="#" class="delete-comment-button" data-id="${c.id_commentaire}">
+                                <img src="./img/delete.png" alt="supprimer commentaire"/>
+                            </a>
+                        </div>
+                    </li>`
+                ).join("")
+                : "<p>Aucun commentaire trouvé.</p>";
+
+
+            // Injection de la section commentaires dans le DOM
+            $("#commentsSection").html(`
+                <div class="bottom-panel">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <h3>Commentaires</h3>
+                        <a 
+                            href="AjouterModifierCommentaire.html?licence=${joueur.numero_licence}" 
+                            class="add-comment-button"
+                        >Ajouter un commentaire</a>
+                    </div>
+                    <ul>
+                        ${commentsHtml}
+                    </ul>
+                </div>
+            `);
+        }
+
+        function calculerAge(dateNaissance) {
+            if(!dateNaissance) return "Inconnu";
+            const naissance = new Date(dateNaissance);
+            const aujourdHui = new Date();
+            let age = aujourdHui.getFullYear() - naissance.getFullYear();
+            const m = aujourdHui.getMonth() - naissance.getMonth();
+            if (m < 0 || (m === 0 && aujourdHui.getDate() < naissance.getDate())) {
+                age--;
+            }
+            return age;
+        }
+
+        $(document).on("click", ".delete-comment-button", async function (e) {
+            e.preventDefault();
+            
+            const commentId = $(this).data("id");
+            if (!commentId || !confirm("Voulez-vous vraiment supprimer ce commentaire ?")) return;
+
+            try {
+                const token = checkToken();
+                const response = await fetch(`${API_URLS.GESTION_SPORT}commentaire/${commentId}`, {
+                    method: "DELETE",
+                    headers: { "Authorization": `Bearer ${token}` },
+                });
+
+                if (!response.ok) throw new Error(`Erreur HTTP : ${response.status}`);
+
+                // Supprimer le commentaire du DOM
+                $(this).closest(".comment-item").remove();
+            } catch (error) {
+                console.error("Erreur lors de la suppression du commentaire :", error);
+                alert("Erreur lors de la suppression du commentaire.");
+            }
+        });
+    </script>
+</head>
+<body>
+    <div id="header-placeholder"></div>
+
+    <main>
+        <section class="player-stats">
+            <h2 id="pageTitle">Statistiques du joueur</h2>
+            <div id="playerStatsContainer"></div>
+            <h3>Participations</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Équipe adverse</th>
+                        <th>Rôle</th>
+                        <th>Évaluation</th>
+                        <th>Résultat</th>
+                    </tr>
+                </thead>
+                <tbody id="participations"></tbody>
+            </table>
+
+            <div id="commentsSection"></div>
+
+            <a href="gestion_joueurs.html" class="back-button">Retour à la gestion des joueurs</a>
+        </section>
+    </main>
+</body>
+</html>

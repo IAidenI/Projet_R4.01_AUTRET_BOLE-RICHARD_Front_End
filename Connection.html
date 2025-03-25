@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion</title>
+    <link rel="stylesheet" href="./Styles/style.css">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body class="connexion-body">
+    <div class="connexion-container">
+        <div class="connexion-container-header">
+            <h1 class="connexion-title">Basketball App</h1>
+        </div>
+        <p class="connexion-text">Connexion de l'entraîneur</p>
+
+        <form id="loginForm" method="POST">
+            <div>
+                <label for="username">Identifiant</label>
+                <input type="text" id="username" name="username" class="connexion-input" placeholder="Saisir l'identifiant" required>
+            </div>
+            <div>
+                <label for="password">Mot de passe</label>
+                <input type="password" id="password" name="password" class="connexion-input" placeholder="Saisir le mot de passe" required>
+            </div>
+            <button type="submit">Envoyer</button>
+        </form>
+        <p id="error-message" style="color: red;"></p>
+    </div>
+</body>
+</html>
+
+<script type="module">
+    import { API_URLS } from './configs.js';
+
+    $(document).ready(function() {
+        $('#loginForm').on('submit', async function(event) {
+            event.preventDefault();
+
+            // Récuperation de informations d'identification
+            let username = $('#username').val();
+            let password = $('#password').val();
+            let errorMessage = $('#error-message');
+
+            // Vérification
+            if (!username || !password) {
+                errorMessage.text("Veuillez remplir tous les champs.");
+                return;
+            }
+
+            let data = JSON.stringify({
+                username: username,
+                password: password
+            })
+            
+            // Envoie des données à l'API
+            try {
+                const response = await fetch(API_URLS.LOGIN, {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: data
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    // Stock le jwt
+                    sessionStorage.setItem("token", result.data);
+
+                    // Redirection vers le dashboard
+                    window.location.href = "./Dashboard.html"
+                } else {
+                    errorMessage.text(`${result.status_message}`);
+                }
+            } catch (error) {
+                console.log("Erreur: ", error);
+            }
+        });
+    });
+</script>
